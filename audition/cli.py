@@ -34,7 +34,8 @@ def main(argv=None):
     f.add_argument("--retake", action="store_true", help="allow a second final (recorded as a retake)")
     cb = sub.add_parser("callback", help="paper stage: today's orders for a strategy, optionally sent to your paper broker")
     cb.add_argument("strategy")
-    cb.add_argument("--broker", default="manual", choices=["manual", "alpaca_paper", "webhook"])
+    cb.add_argument("--broker", default="manual",
+                    help="manual, webhook, or a broker id: alpaca, ibkr, tradier, saxo, trading212 (schwab, questrade read-only)")
     cb.add_argument("--equity", type=float, default=100_000.0, help="manual mode only")
     cb.add_argument("--send", action="store_true", help="send the orders (market-on-open)")
     cl = sub.add_parser("claims", help="check posted trade claims against real prices (file or stdin)")

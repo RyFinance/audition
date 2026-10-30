@@ -406,8 +406,8 @@ counted. When it's ready, take the final audition once on the locked years. That
 at D, lookahead or a money-losing strategy is an F, a hand-picked list of today's survivors is at most C, and a big gap between
 what you reported and what Audition measures pulls it down.</p>
 <h2 class="sec">5 · Then paper trade it</h2>
-<p class="steps">Paper trading turns a disc's targets into orders on your own paper account (Alpaca, Tradier, Interactive Brokers,
-OANDA, Binance testnet, Bybit testnet, or a webhook) and tracks live results against the backtest's range of outcomes.</p>
+<p class="steps">Paper trading turns a disc's targets into orders on your own paper account (Alpaca, Interactive Brokers, Tradier,
+Saxo, Trading 212, or a webhook; Schwab and Questrade read-only) and tracks live results against the backtest's range of outcomes.</p>
 <p class="foot">Audition is research software. A backtest audit can't prove an edge, only find reasons to distrust one. Nothing here is
 investment advice; you trade at your own risk.</p>
 </div></main>
@@ -454,7 +454,7 @@ the backtest's own range of outcomes.</p>
   <button class="ghost" id="ksend" type="button">Send to paper</button><span class="sub" id="kmsg" style="align-self:center"></span></div>
 </div><div class="side"><div class="box"><h3>Schedule it</h3><p class="sub">Run after each close, e.g. from cron at 16:30 ET:</p>
  <pre class="log" id="kcmd">audition callback strategy.py --broker alpaca_paper --send</pre>
- <p class="sub">Every broker here is a paper, sandbox, practice or testnet endpoint. Audition has no live-trading code.</p></div></div></div>
+ <p class="sub">Orders only go to paper, sandbox or demo accounts. Schwab and Questrade have no API paper trading, so Audition only reads them.</p></div></div></div>
 <div id="kout"></div>
 <h2 class="sec">Your paper account</h2><div id="brokers"></div>
 </div></main>
@@ -481,8 +481,8 @@ function loadConn(){ fetch('/api/connections').then(r => r.json()).then(j => { C
   $('kbroker').innerHTML = '<option value="manual">Manual (no broker)</option>' + Object.entries(j.brokers).map(([n, b]) =>
     `<option value="${n}">${esc(b.label)}${j.config[n] ? '' : ' (not linked)'}</option>`).join(''); cmd(); }); }
 function connRow(name, spec, vals, isProvider){
-  const fields = spec.fields.map(f => `<input data-f="${f}" placeholder="${f.replace('_', ' ')}" value="${esc(vals[f] || '')}"
-    ${f === 'secret' || f === 'key' ? 'autocomplete="off"' : ''}>`).join('');
+  const fields = spec.fields.map(f => `<input data-f="${f}" placeholder="${esc((spec.placeholders || {})[f] || f.replace('_', ' '))}"
+    value="${esc(vals[f] || '')}" autocomplete="off" ${(spec.secret || []).includes(f) ? 'type="password"' : ''}>`).join('');
   const def = isProvider ? `<label class="sub" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="radio" name="defsrc" value="${name}"
     ${CONN.default === name ? 'checked' : ''}> default source</label>` : '';
   return `<div class="conn" data-name="${name}"><div><b>${esc(spec.label)}</b>${spec.kind ? `<div class="sub">${esc(spec.kind)}</div>` : ''}${def}</div>

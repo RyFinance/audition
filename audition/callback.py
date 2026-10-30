@@ -2,12 +2,13 @@
 
 Each run: compute today's target weights from the strategy file on the latest data, read the
 paper account, turn the difference into order tickets (whole shares, a cash buffer, tiny
-trades skipped), and optionally send them as market-on-open orders, which is exactly how
-Audition's backtest fills. Every run also snapshots the account so the live track record can be
+trades skipped), and optionally send them as market orders to the paper account. Run it after
+the close and they queue for the next open, which is how Audition's backtest fills. Every run also snapshots the account so the live track record can be
 compared with the backtest's own distribution (the cone).
 
-Brokers: Alpaca paper (paper-api.alpaca.markets only; there is no live endpoint in this file),
-a webhook to your own engine, or "manual" (no broker: you type equity and positions)."""
+Brokers: the adapters in audition/brokers (shared with Meridian): Alpaca, Interactive Brokers, Tradier,
+Saxo and Trading 212 on their paper / sandbox / demo environments; Schwab and Questrade read-only.
+Plus a webhook to your own engine, or "manual" (no broker: you type equity and positions)."""
 
 from __future__ import annotations
 
@@ -16,8 +17,6 @@ import hashlib
 import hmac
 import json
 import math
-import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -26,41 +25,11 @@ import pandas as pd
 
 from . import data as data_mod, strategy as strat_mod, universes
 from .regions import REGIONS, infer_region
-from .sources import creds
+from .sources import creds, load_config, save_config
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / "callback"
 PAPER = "https://paper-api.alpaca.markets"
-
-
-def _http(method, url, headers=None, body=None, form=False, insecure=False, timeout=20):
-    data = None
-    h = {"User-Agent": "audition/0.2", **(headers or {})}
-    if body is not None:
-        if form:
-            data = urllib.parse.urlencode(body).encode()
-            h.setdefault("Content-Type", "application/x-www-form-urlencoded")
-        else:
-            data = json.dumps(body).encode()
-            h.setdefault("Content-Type", "application/json")
-    ctx = None
-    if insecure:  # IBKR's local gateway uses a self-signed certificate on localhost only
-        import ssl
-        ctx = ssl._create_unverified_context()
-    req = urllib.request.Request(url, method=method, headers=h, data=data)
-    try:
-        raw = urllib.request.urlopen(req, timeout=timeout, context=ctx).read()
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"{e.code} {e.reason}: {e.read()[:300].decode('utf-8', 'ignore')}") from None
-    return json.loads(raw) if raw.strip() else {}
-
-
-def _crypto_pair(sym: str) -> str:
-    return sym.replace("-USD", "USDT") if sym.endswith("-USD") else sym
-
-
-def _yahoo_from_pair(pair: str) -> str:
-    return pair[:-4] + "-USD" if pair.endswith("USDT") else pair
 
 
 def _split_flip(t):
@@ -71,321 +40,97 @@ def _split_flip(t):
     return [(-a, a), (b, 0.0)]
 
 
-class Broker:
-    key = ""
-    fractional = False
-    required = ()
+def _side(qty, held):
+    if qty > 0:
+        return "buy_to_cover" if held < 0 else "buy"
+    return "sell" if held > 0 else "sell_short"
 
-    def __init__(self):
-        from .sources import BROKERS
-        self.cfg = creds(self.key)
-        self.label = BROKERS[self.key]["label"]
-        missing = [f for f in self.required if not self.cfg.get(f)]
+
+class PaperBroker:
+    """Audition's wrapper around the broker adapters (the same ones Meridian uses).
+
+    Orders only ever go to a paper / sandbox / demo environment. A broker without one
+    (Schwab) or without API orders (Questrade) is read-only: its positions and equity
+    feed the order preview, and send() refuses."""
+
+    fractional = False
+
+    def __init__(self, key: str):
+        from .brokers import REGISTRY
+        if key not in REGISTRY:
+            raise RuntimeError(f"unknown broker {key}")
+        cls = REGISTRY[key]
+        self.key, self.label = key, cls.name
+        creds = {k: v for k, v in (load_config().get("paper_" + key) or {}).items() if v}
+        missing = [f.name for f in cls.fields if not f.optional and not creds.get(f.name)]
         if missing:
-            raise RuntimeError(f"{self.label}: add {', '.join(missing)} under Paper trading → Your paper account")
+            raise RuntimeError(f"{cls.name}: add {', '.join(missing)} under Paper trading → Your paper account")
+        env = "paper" if "paper" in cls.envs else cls.envs[0]
+        self.read_only = env != "paper" or "paper" not in cls.can_trade
+        self.adapter = cls(creds, env)
+        if key == "questrade":  # refresh tokens are single-use: keep the new one
+            def keep(tok):
+                cfg = load_config()
+                cfg.setdefault("paper_questrade", {})["refresh_token"] = tok
+                save_config(cfg)
+            self.adapter.on_refresh = keep
+        self._acct = None
+
+    def _account(self):
+        if self._acct is None:
+            self._acct = self.adapter.account()
+        return self._acct
+
+    def equity(self) -> float:
+        return float(self._account().equity or 0.0)
+
+    def positions(self) -> dict:
+        return {p.symbol: float(p.qty) for p in self._account().positions if p.qty}
 
     def describe(self) -> str:
-        return f"{self.label}: equity ${self.equity():,.0f}, {len(self.positions())} open position(s)"
+        a = self._account()
+        mode = "read-only" if self.read_only else "paper"
+        return f"{self.label} ({mode}): equity {a.currency} {float(a.equity or 0):,.0f}, {len(a.positions)} position(s)"
 
     def fills(self, after: str) -> list:
-        return []
-
-
-class AlpacaPaper(Broker):
-    key = "alpaca_paper"
-    required = ("key_id", "secret")
-
-    def _req(self, method, path, body=None):
-        return _http(method, PAPER + path, {"APCA-API-KEY-ID": self.cfg["key_id"], "APCA-API-SECRET-KEY": self.cfg["secret"]}, body)
-
-    def account(self):
-        return self._req("GET", "/v2/account")
-
-    def equity(self):
-        return float(self.account()["equity"])
-
-    def positions(self) -> dict:
-        return {p["symbol"]: float(p["qty"]) for p in self._req("GET", "/v2/positions")}
-
-    def fills(self, after: str) -> list:
-        return self._req("GET", f"/v2/orders?status=closed&after={after}T00:00:00Z&limit=500&direction=asc")
+        if self.key != "alpaca":
+            return []
+        return self.adapter._get("/v2/orders", status="closed", after=f"{after}T00:00:00Z", limit=500, direction="asc")
 
     def send(self, tickets: list[dict]) -> list[dict]:
-        out = []
-        for t in tickets:
-            body = dict(symbol=t["symbol"], qty=str(abs(int(t["shares"]))), side="buy" if t["shares"] > 0 else "sell",
-                        type="market", time_in_force="opg", client_order_id=t["id"])
-            try:
-                o = self._req("POST", "/v2/orders", body)
-                out.append(dict(symbol=t["symbol"], status=o.get("status"), id=o.get("id")))
-            except Exception as e:
-                out.append(dict(symbol=t["symbol"], status="rejected", error=str(e)[:200]))
-        return out
-
-
-class TradierSandbox(Broker):
-    key = "tradier_sandbox"
-    required = ("token", "account_id")
-    BASE = "https://sandbox.tradier.com/v1"
-
-    def _req(self, method, path, body=None):
-        return _http(method, self.BASE + path, {"Authorization": f"Bearer {self.cfg['token']}", "Accept": "application/json"},
-                     body, form=True)
-
-    def equity(self):
-        b = self._req("GET", f"/accounts/{self.cfg['account_id']}/balances")["balances"]
-        return float(b.get("total_equity") or 0)
-
-    def positions(self) -> dict:
-        p = (self._req("GET", f"/accounts/{self.cfg['account_id']}/positions").get("positions") or {})
-        p = p.get("position", []) if isinstance(p, dict) else []
-        p = [p] if isinstance(p, dict) else p
-        return {x["symbol"]: float(x["quantity"]) for x in p}
-
-    def send(self, tickets):
+        if self.read_only:
+            raise RuntimeError(f"{self.label} has no paper trading through its API; Audition only reads it")
         out = []
         for t in tickets:
             for qty, held in _split_flip(t):
-                side = ("buy_to_cover" if held < 0 else "buy") if qty > 0 else ("sell" if held > 0 else "sell_short")
+                side = _side(qty, held)
                 try:
-                    o = self._req("POST", f"/accounts/{self.cfg['account_id']}/orders",
-                                  dict(**{"class": "equity"}, symbol=t["symbol"], side=side, quantity=int(abs(qty)),
-                                       type="market", duration="day", tag=t["id"][:40].replace("_", "-")))
-                    out.append(dict(symbol=t["symbol"], side=side, status=(o.get("order") or {}).get("status"),
-                                    id=(o.get("order") or {}).get("id")))
+                    r = self.adapter.submit_market(t["symbol"], side, int(abs(qty)))
+                    out.append(dict(symbol=t["symbol"], side=side, qty=int(abs(qty)), status=r.status, id=r.order_id))
                 except Exception as e:
-                    out.append(dict(symbol=t["symbol"], side=side, status="rejected", error=str(e)[:200]))
+                    out.append(dict(symbol=t["symbol"], side=side, qty=int(abs(qty)), status="rejected", error=str(e)[:200]))
         return out
 
 
-class IBKRPaper(Broker):
-    key = "ibkr_paper"
-    required = ()
+class Webhook:
+    key, label, fractional, read_only = "webhook", "Webhook", False, False
 
     def __init__(self):
-        super().__init__()
-        gw = (self.cfg.get("gateway") or "https://localhost:5000").rstrip("/")
-        host = urllib.parse.urlparse(gw).hostname
-        if host not in ("localhost", "127.0.0.1"):
-            raise RuntimeError("the IBKR gateway must run on this computer (localhost)")
-        self.base = gw + "/v1/api"
-        self.acct = self.cfg.get("account_id")
-
-    def _req(self, method, path, body=None):
-        return _http(method, self.base + path, body=body, insecure=True)
-
-    def _account(self):
-        if not self.acct:
-            accts = self._req("GET", "/portfolio/accounts")
-            self.acct = accts[0]["id"]
-        if not str(self.acct).startswith("D"):
-            raise RuntimeError(f"account {self.acct} isn't a paper account (paper ids start with D); Audition only trades paper")
-        return self.acct
-
-    def equity(self):
-        s = self._req("GET", f"/portfolio/{self._account()}/summary")
-        return float((s.get("netliquidation") or {}).get("amount") or 0)
-
-    def positions(self) -> dict:
-        out, page = {}, 0
-        while True:
-            rows = self._req("GET", f"/portfolio/{self._account()}/positions/{page}")
-            if not rows:
-                break
-            for r in rows:
-                out[r.get("ticker") or r.get("contractDesc")] = float(r["position"])
-            if len(rows) < 100:
-                break
-            page += 1
-        return out
-
-    def _conid(self, sym):
-        r = self._req("GET", f"/iserver/secdef/search?symbol={urllib.parse.quote(sym)}")
-        return int(r[0]["conid"])
-
-    def send(self, tickets):
-        acct, out = self._account(), []
-        for t in tickets:
-            try:
-                o = self._req("POST", f"/iserver/account/{acct}/orders", dict(orders=[dict(
-                    conid=self._conid(t["symbol"]), orderType="MKT", side="BUY" if t["shares"] > 0 else "SELL",
-                    quantity=abs(int(t["shares"])), tif="OPG", cOID=t["id"])]))
-                # IBKR asks to confirm warnings ("are you sure?") before it accepts an order
-                for _ in range(4):
-                    if isinstance(o, list) and o and "id" in o[0] and "order_id" not in o[0]:
-                        o = self._req("POST", f"/iserver/reply/{o[0]['id']}", dict(confirmed=True))
-                    else:
-                        break
-                first = o[0] if isinstance(o, list) and o else o
-                out.append(dict(symbol=t["symbol"], status=first.get("order_status"), id=first.get("order_id")))
-            except Exception as e:
-                out.append(dict(symbol=t["symbol"], status="rejected", error=str(e)[:200]))
-        return out
-
-
-class OandaPractice(Broker):
-    key = "oanda_practice"
-    required = ("token", "account_id")
-    BASE = "https://api-fxpractice.oanda.com/v3"
-
-    @staticmethod
-    def inst(sym):
-        s = sym[:-2] if sym.endswith("=X") else sym
-        return f"{s[:3]}_{s[3:6]}" if len(s) == 6 else s
-
-    @staticmethod
-    def yahoo(inst):
-        return inst.replace("_", "") + "=X" if len(inst) == 7 else inst
-
-    def _req(self, method, path, body=None):
-        return _http(method, self.BASE + path, {"Authorization": f"Bearer {self.cfg['token']}"}, body)
-
-    def equity(self):
-        return float(self._req("GET", f"/accounts/{self.cfg['account_id']}/summary")["account"]["NAV"])
-
-    def positions(self) -> dict:
-        out = {}
-        for p in self._req("GET", f"/accounts/{self.cfg['account_id']}/openPositions").get("positions", []):
-            out[self.yahoo(p["instrument"])] = float(p["long"]["units"]) + float(p["short"]["units"])
-        return out
-
-    def send(self, tickets):
-        out = []
-        for t in tickets:
-            try:
-                o = self._req("POST", f"/accounts/{self.cfg['account_id']}/orders", dict(order=dict(
-                    type="MARKET", instrument=self.inst(t["symbol"]), units=str(int(t["shares"])), timeInForce="FOK",
-                    positionFill="DEFAULT", clientExtensions=dict(id=t["id"][:40]))))
-                tx = o.get("orderFillTransaction") or o.get("orderCreateTransaction") or {}
-                out.append(dict(symbol=t["symbol"], status="filled" if "orderFillTransaction" in o else "created", id=tx.get("id")))
-            except Exception as e:
-                out.append(dict(symbol=t["symbol"], status="rejected", error=str(e)[:200]))
-        return out
-
-
-class BinanceTestnet(Broker):
-    key = "binance_testnet"
-    required = ("key", "secret")
-    fractional = True
-    BASE = "https://testnet.binance.vision/api"
-
-    def _signed(self, method, path, params=None):
-        import time as _t
-        q = dict(params or {}, timestamp=int(_t.time() * 1000), recvWindow=5000)
-        qs = urllib.parse.urlencode(q)
-        sig = hmac.new(self.cfg["secret"].encode(), qs.encode(), hashlib.sha256).hexdigest()
-        return _http(method, f"{self.BASE}{path}?{qs}&signature={sig}", {"X-MBX-APIKEY": self.cfg["key"]})
-
-    def _prices(self):
-        return {p["symbol"]: float(p["price"]) for p in _http("GET", self.BASE + "/v3/ticker/price")}
-
-    def _balances(self):
-        return {b["asset"]: float(b["free"]) + float(b["locked"]) for b in self._signed("GET", "/v3/account")["balances"]}
-
-    def equity(self):
-        px, total = self._prices(), 0.0
-        for asset, q in self._balances().items():
-            if q <= 0:
-                continue
-            total += q if asset in ("USDT", "USDC", "FDUSD", "BUSD") else q * px.get(asset + "USDT", 0.0)
-        return total
-
-    def positions(self) -> dict:
-        return {a + "-USD": q for a, q in self._balances().items() if q > 0 and a not in ("USDT", "USDC", "FDUSD", "BUSD")}
-
-    def send(self, tickets):
-        info = _http("GET", self.BASE + "/v3/exchangeInfo")
-        steps = {}
-        for sy in info.get("symbols", []):
-            for f in sy["filters"]:
-                if f["filterType"] == "LOT_SIZE":
-                    steps[sy["symbol"]] = float(f["stepSize"])
-        out = []
-        for t in tickets:
-            pair = _crypto_pair(t["symbol"])
-            step = steps.get(pair, 1e-6)
-            qty = math.floor(abs(t["shares"]) / step) * step
-            if qty <= 0:
-                continue
-            try:
-                o = self._signed("POST", "/v3/order", dict(symbol=pair, side="BUY" if t["shares"] > 0 else "SELL",
-                                                            type="MARKET", quantity=f"{qty:.8f}".rstrip("0").rstrip("."),
-                                                            newClientOrderId=t["id"][:36]))
-                out.append(dict(symbol=t["symbol"], status=o.get("status"), id=o.get("orderId")))
-            except Exception as e:
-                out.append(dict(symbol=t["symbol"], status="rejected", error=str(e)[:200]))
-        return out
-
-
-class BybitTestnet(Broker):
-    key = "bybit_testnet"
-    required = ("key", "secret")
-    fractional = True
-    BASE = "https://api-testnet.bybit.com"
-
-    def _req(self, method, path, params=None, body=None):
-        import time as _t
-        ts, rw = str(int(_t.time() * 1000)), "5000"
-        payload = json.dumps(body) if body is not None else urllib.parse.urlencode(params or {})
-        sig = hmac.new(self.cfg["secret"].encode(), (ts + self.cfg["key"] + rw + payload).encode(), hashlib.sha256).hexdigest()
-        h = {"X-BAPI-API-KEY": self.cfg["key"], "X-BAPI-TIMESTAMP": ts, "X-BAPI-RECV-WINDOW": rw, "X-BAPI-SIGN": sig}
-        url = self.BASE + path + (f"?{payload}" if body is None and payload else "")
-        js = _http(method, url, h, body)
-        if js.get("retCode") not in (0, None):
-            raise RuntimeError(f"Bybit {js.get('retCode')}: {js.get('retMsg')}")
-        return js.get("result", {})
-
-    def _wallet(self):
-        return self._req("GET", "/v5/account/wallet-balance", dict(accountType="UNIFIED"))["list"][0]
-
-    def equity(self):
-        return float(self._wallet().get("totalEquity") or 0)
-
-    def positions(self) -> dict:
-        return {c["coin"] + "-USD": float(c["walletBalance"]) for c in self._wallet().get("coin", [])
-                if c["coin"] not in ("USDT", "USDC") and float(c["walletBalance"] or 0) > 0}
-
-    def send(self, tickets):
-        out = []
-        for t in tickets:
-            qty = round(abs(t["shares"]), 6)
-            if qty <= 0:
-                continue
-            try:
-                o = self._req("POST", "/v5/order/create", body=dict(
-                    category="spot", symbol=_crypto_pair(t["symbol"]), side="Buy" if t["shares"] > 0 else "Sell",
-                    orderType="Market", qty=f"{qty}", marketUnit="baseCoin", orderLinkId=t["id"][:36]))
-                out.append(dict(symbol=t["symbol"], status="submitted", id=o.get("orderId")))
-            except Exception as e:
-                out.append(dict(symbol=t["symbol"], status="rejected", error=str(e)[:200]))
-        return out
-
-
-class Webhook(Broker):
-    key = "webhook"
-    required = ("url",)
+        self.cfg = creds("webhook")
+        if not self.cfg.get("url"):
+            raise RuntimeError("Webhook: add a URL under Paper trading → Your paper account")
 
     def describe(self):
         return f"Will POST orders to {self.cfg['url']}"
 
-    def equity(self):
-        raise RuntimeError("a webhook can't report equity; Audition uses the equity you type")
-
-    def positions(self):
-        return {}
-
     def send(self, tickets, meta=None):
-        return _webhook_send(dict(meta or {}, orders=[dict(symbol=t["symbol"], qty=t["shares"], type="market_on_open",
+        return _webhook_send(dict(meta or {}, orders=[dict(symbol=t["symbol"], qty=t["shares"], type="market",
                                                           client_order_id=t["id"]) for t in tickets]))
 
 
-BROKER_CLASSES = {c.key: c for c in (AlpacaPaper, TradierSandbox, IBKRPaper, OandaPractice, BinanceTestnet, BybitTestnet, Webhook)}
-
-
-def broker(name: str) -> Broker:
-    if name not in BROKER_CLASSES:
-        raise RuntimeError(f"unknown broker {name}")
-    return BROKER_CLASSES[name]()
+def broker(name: str):
+    """name: "webhook" or a broker id ("alpaca", "ibkr", ...); the "paper_" config prefix is accepted too."""
+    return Webhook() if name == "webhook" else PaperBroker(name.removeprefix("paper_"))
 
 
 def _webhook_send(payload: dict) -> dict:
@@ -541,8 +286,8 @@ def track(name: str, path: str | None = None) -> dict:
     else:
         out["message"] = "Re-audit this strategy to draw the backtest cone."
     try:
-        if snaps[-1].get("broker") == "alpaca_paper":
-            fills = broker("alpaca_paper").fills(snaps[0]["date"])
+        if snaps[-1].get("broker", "").removeprefix("paper_") == "alpaca":
+            fills = broker("alpaca").fills(snaps[0]["date"])
             drift = []
             for o in fills:
                 if not o.get("filled_avg_price") or not o.get("filled_at"):

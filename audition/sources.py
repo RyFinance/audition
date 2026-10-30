@@ -45,23 +45,37 @@ PROVIDERS = {
     "binance": dict(label="Binance (crypto)", fields=[],
                     note="Free, no key. Daily candles for USDT pairs; BTC-USD maps to BTCUSDT."),
 }
-BROKERS = {
-    "alpaca_paper": dict(label="Alpaca paper", fields=["key_id", "secret"], kind="US stocks & ETFs",
-                         note="paper-api.alpaca.markets. Market-on-open orders, the same fill the backtest assumes."),
-    "tradier_sandbox": dict(label="Tradier sandbox", fields=["token", "account_id"], kind="US stocks & ETFs",
-                            note="sandbox.tradier.com with your sandbox token. Day market orders, queued for the next open."),
-    "ibkr_paper": dict(label="Interactive Brokers paper", fields=["account_id", "gateway"], kind="global stocks",
-                       note="Through IBKR's Client Portal Gateway running on this computer (default https://localhost:5000), "
-                            "logged in to your paper account. Market-on-open orders."),
-    "oanda_practice": dict(label="OANDA practice", fields=["token", "account_id"], kind="FX & CFDs",
-                           note="api-fxpractice.oanda.com. EURUSD=X maps to EUR_USD."),
-    "binance_testnet": dict(label="Binance spot testnet", fields=["key", "secret"], kind="crypto",
-                            note="testnet.binance.vision with testnet keys. BTC-USD maps to BTCUSDT; fractional sizes."),
-    "bybit_testnet": dict(label="Bybit testnet", fields=["key", "secret"], kind="crypto",
-                          note="api-testnet.bybit.com, unified account, spot orders. BTC-USD maps to BTCUSDT."),
-    "webhook": dict(label="Webhook", fields=["url", "secret"], kind="anything",
-                    note="POSTs the order list as JSON (HMAC-signed if you set a secret) to your own bot or paper engine."),
+NOTES = {  # Audition-specific setup notes (the adapters' own notes describe Meridian's live mode)
+    "alpaca": "Use your paper key pair (starts with PK). Shorting needs margin on the paper account.",
+    "schwab": "No paper environment, so Audition only reads balances and positions. Refresh tokens expire after 7 days.",
+    "ibkr": "Run IBKR's Client Portal Gateway on this computer and log in with your paper username (account DU…).",
+    "tradier": "Use the sandbox token from Tradier's developer dashboard and your sandbox account number.",
+    "questrade": "Read-only: Questrade only allows order placement for approved partner apps. Practice-account token.",
+    "saxo": "A 24-hour SIM token from developer.saxo. Orders go to Saxo's simulation environment.",
+    "trading212": "Long-only. Use the API key from your Practice account (Settings → API).",
 }
+
+
+def _brokers() -> dict:
+    """Paper brokers: Meridian's adapters (audition/brokers) plus a webhook. Config keys are paper_<id>."""
+    from .brokers import REGISTRY
+    region = {"us": "US", "ca": "Canada", "intl": "International"}
+    out = {}
+    for b in REGISTRY.values():
+        paper = "paper" in b.envs and "paper" in b.can_trade
+        mode = "paper orders" if paper else "read-only (no API paper trading)"
+        out["paper_" + b.id] = dict(label=b.name, fields=[f.name for f in b.fields],
+                                    placeholders={f.name: f.label + ("" if not f.optional else " (optional)") for f in b.fields},
+                                    secret=[f.name for f in b.fields if f.secret],
+                                    kind=" · ".join(region.get(r, r) for r in b.regions) + " · " + mode, note=NOTES.get(b.id, b.note))
+    out["webhook"] = dict(label="Webhook", fields=["url", "secret"], kind="anything · paper orders",
+                          placeholders={"url": "https://your-engine/orders", "secret": "signing secret (optional)"},
+                          secret=["secret"],
+                          note="POSTs the order list as JSON (HMAC-signed if you set a secret) to your own bot or paper engine.")
+    return out
+
+
+BROKERS = _brokers()
 
 
 # --------------------------------------------------------------------------- config
@@ -90,8 +104,8 @@ def masked() -> dict:
         if not isinstance(vals, dict):
             out[name] = vals
             continue
-        out[name] = {k: (v if k in ("feed", "url", "account_id", "gateway") else ("••••" + str(v)[-4:] if v else ""))
-                     for k, v in vals.items()}
+        secret = set(BROKERS.get(name, {}).get("secret", [])) | {"key", "secret", "key_id", "token"}
+        out[name] = {k: ("••••" + str(v)[-4:] if v and k in secret else v) for k, v in vals.items()}
     return out
 
 

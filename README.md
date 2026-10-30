@@ -6,7 +6,7 @@
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-0a0a0a?style=flat-square&labelColor=0a0a0a&color=efe9dc">
   <img alt="checks" src="https://img.shields.io/badge/checks-71-0a0a0a?style=flat-square&labelColor=0a0a0a&color=c23b2a">
   <img alt="data" src="https://img.shields.io/badge/data%20sources-10-0a0a0a?style=flat-square&labelColor=0a0a0a&color=2e7d57">
-  <img alt="paper" src="https://img.shields.io/badge/paper%20brokers-6-0a0a0a?style=flat-square&labelColor=0a0a0a&color=b5760f">
+  <img alt="brokers" src="https://img.shields.io/badge/brokers-7-0a0a0a?style=flat-square&labelColor=0a0a0a&color=b5760f">
   <img alt="runs" src="https://img.shields.io/badge/runs-localhost%20only-0a0a0a?style=flat-square&labelColor=0a0a0a&color=e9e9e9">
 </p>
 
@@ -87,17 +87,20 @@ Or upload your own files and use `UNIVERSE = "byo:<name>"`. Keys live in `config
 
 ## Paper brokers
 
-| Broker | Markets | Endpoint |
-|---|---|---|
-| Alpaca | US stocks & ETFs | paper-api.alpaca.markets, market-on-open |
-| Tradier | US stocks & ETFs | sandbox.tradier.com |
-| Interactive Brokers | global stocks | your local Client Portal Gateway, paper (`D…`) accounts only |
-| OANDA | FX & CFDs | api-fxpractice.oanda.com |
-| Binance | crypto | testnet.binance.vision |
-| Bybit | crypto | api-testnet.bybit.com |
-| Webhook | anything | POSTs signed JSON orders to your own engine |
+The same broker adapters as [Meridian](https://github.com/RyFinance/meridian), used on their paper environments only.
 
-Every broker integration targets a paper, sandbox, practice or testnet endpoint. **There is no live-trading code in Audition.**
+| Region | Broker | In Audition |
+|---|---|---|
+| US | Alpaca | paper orders |
+| US · CA · Intl | Interactive Brokers (Client Portal Gateway on your machine) | paper orders, `D…` accounts only |
+| US | Tradier | sandbox orders |
+| Intl | Saxo Bank | SIM orders |
+| Intl | Trading 212 | demo orders (long only) |
+| US | Charles Schwab | read-only (Schwab has no paper environment) |
+| Canada | Questrade | read-only (no API orders for personal apps) |
+| Anywhere | Webhook | POSTs signed JSON orders to your own engine |
+
+Audition never sends an order to a live account: brokers without an API paper environment are only read, so their positions and equity can size the preview.
 
 ## Command line
 

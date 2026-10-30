@@ -49,7 +49,7 @@
   <text x="74" y="322" class="serif sub">the costs and the statistics, then grades what's left.</text>
   <g class="mono meta">
     <text x="74" y="384" class="row" style="animation-delay:.2s">71 CHECKS · MONTE CARLO · HOLDOUT VAULT · TWIN FINDER</text>
-    <text x="74" y="406" class="row" style="animation-delay:.5s">10 DATA SOURCES · 6 PAPER BROKERS · LOCALHOST ONLY</text>
+    <text x="74" y="406" class="row" style="animation-delay:.5s">10 DATA SOURCES · 7 BROKERS (PAPER ONLY) · LOCALHOST</text>
   </g>
 
   <!-- right: a white CD-R with a handwritten grade -->
