@@ -156,7 +156,8 @@ a{color:inherit}
 .tour-dim{position:fixed;inset:0;z-index:90;pointer-events:auto}
 .tour-hole{position:fixed;z-index:91;box-shadow:0 0 0 9999px rgba(10,10,10,.55);border-radius:6px;pointer-events:none;
   transition:all .35s cubic-bezier(.2,.8,.2,1)}
-.tour-card{position:fixed;z-index:92;width:min(360px,calc(100vw - 32px));background:#fff;color:#111;padding:20px 22px 16px;
+body.touring .dock{z-index:93}
+.tour-card{position:fixed;z-index:96;width:min(360px,calc(100vw - 32px));background:#fff;color:#111;padding:20px 22px 16px;
   box-shadow:0 20px 60px rgba(0,0,0,.25);transition:top .35s,left .35s}
 .tour-card .n{font:500 10px/1 var(--sans);letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
 .tour-card h4{font:400 30px/1.05 var(--serif);margin:10px 0 8px}
@@ -375,9 +376,11 @@ function show(){
     let left, top;
     if (!r) { left = (innerWidth - cw) / 2; top = (innerHeight - ch) / 2; }
     else {
-      left = Math.min(Math.max(16, r.left + r.width / 2 - cw / 2), innerWidth - cw - 16);
-      top = r.top - ch - 24 > 16 ? r.top - ch - 24 : Math.min(r.bottom + 24, innerHeight - ch - 16);
-      if (r.height > innerHeight * .5) { top = (innerHeight - ch) / 2; left = r.left > cw + 40 ? r.left - cw - 24 : Math.min(r.right + 24, innerWidth - cw - 16); }
+      const cx = Math.min(Math.max(16, r.left + r.width / 2 - cw / 2), innerWidth - cw - 16);
+      const cy = Math.min(Math.max(16, r.top + r.height / 2 - ch / 2), innerHeight - ch - 16);
+      const spots = [[cx, r.top - ch - 20], [cx, r.bottom + 20], [r.left - cw - 20, cy], [r.right + 20, cy]];
+      const fit = spots.find(([x, y]) => x >= 12 && y >= 12 && x + cw <= innerWidth - 12 && y + ch <= innerHeight - 12);
+      [left, top] = fit || [16, 16];   // nothing fits beside it: park the card in the corner
     }
     card.style.left = left + 'px'; card.style.top = top + 'px';
     card.querySelector('.go').onclick = () => i === steps.length - 1 ? end() : (i++, show());
@@ -387,16 +390,20 @@ function show(){
 }
 function start(){
   if (dim) return;
+  const t = document.getElementById('dk-tip'); if (t) t.remove();
   i = 0;
   dim = document.createElement('div'); dim.className = 'tour-dim';
   hole = document.createElement('div'); hole.className = 'tour-hole';
   card = document.createElement('div'); card.className = 'tour-card';
   document.body.append(dim, hole, card);
+  document.body.classList.add('touring');
   dim.onclick = e => e.stopPropagation();
+  card.onclick = e => e.stopPropagation();   // keep the dock's outside-click handler from closing the menu mid-tour
   show();
 }
 function end(){
   [dim, hole, card].forEach(x => x && x.remove()); dim = null;
+  document.body.classList.remove('touring');
   document.querySelector('.dock').classList.remove('open');
   try { localStorage.setItem(key, '1'); localStorage.setItem('aud-tip', '1'); } catch(e) {}
 }
