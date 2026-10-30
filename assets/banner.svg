@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 440" width="1280" height="440" role="img" aria-label="AUDITION: an honest audit for trading strategies">
+  <defs>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" stitchTiles="stitch" result="n"/>
+      <feColorMatrix in="n" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .22 0"/>
+    </filter>
+    <radialGradient id="disc" cx=".38" cy=".32" r=".8">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".6" stop-color="#f3f3f1"/>
+      <stop offset="1" stop-color="#e2e2df"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffc4d8" stop-opacity=".35"/>
+      <stop offset=".35" stop-color="#bfe4ff" stop-opacity=".35"/>
+      <stop offset=".7" stop-color="#d6ffc9" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#fff0b8" stop-opacity=".35"/>
+    </linearGradient>
+    <clipPath id="win"><rect x="868" y="214" width="196" height="52" rx="26"/></clipPath>
+  </defs>
+  <style>
+    .serif { font-family: 'Instrument Serif', 'Times New Roman', Georgia, serif; }
+    .sans { font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 150px; fill: #0a0a0a; letter-spacing: -2px; }
+    .kicker { font-size: 13px; letter-spacing: 6px; fill: #0a0a0a; font-weight: 600; }
+    .sub { font-size: 25px; fill: #2a2a2a; }
+    .meta { font-size: 12px; letter-spacing: 3px; fill: #6e6e6e; }
+    .marker { font-family: 'Permanent Marker', 'Marker Felt', 'Comic Sans MS', cursive; }
+    .reel { transform-box: fill-box; transform-origin: center; animation: spin 2.4s linear infinite; }
+    .tape { animation: float 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .cd { animation: drift 7s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .grade { stroke-dasharray: 260; stroke-dashoffset: 260; animation: draw 1.4s 0.6s ease-out forwards; }
+    .gl { opacity: 0; animation: fade .6s 1.6s ease forwards; }
+    .row { opacity: 0; animation: fade .5s ease forwards; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes float { 0%,100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-8px) rotate(-7deg); } }
+    @keyframes drift { 0%,100% { transform: translateY(0) rotate(4deg); } 50% { transform: translateY(6px) rotate(6deg); } }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes fade { to { opacity: 1; } }
+  </style>
+
+  <rect width="1280" height="440" fill="#f2f2f2"/>
+  <rect width="1280" height="440" filter="url(#grain)"/>
+
+  <!-- left: type -->
+  <text x="72" y="92" class="sans kicker">AN HONEST AUDIT FOR TRADING STRATEGIES</text>
+  <text x="62" y="236" class="serif title">Audition</text>
+  <text x="74" y="290" class="serif sub">Hand it one Python file. It owns the data, the fills,</text>
+  <text x="74" y="322" class="serif sub">the costs and the statistics, then grades what's left.</text>
+  <g class="mono meta">
+    <text x="74" y="384" class="row" style="animation-delay:.2s">71 CHECKS · MONTE CARLO · HOLDOUT VAULT · TWIN FINDER</text>
+    <text x="74" y="406" class="row" style="animation-delay:.5s">10 DATA SOURCES · 6 PAPER BROKERS · LOCALHOST ONLY</text>
+  </g>
+
+  <!-- right: a white CD-R with a handwritten grade -->
+  <g class="cd">
+    <circle cx="1120" cy="132" r="104" fill="url(#disc)" stroke="#cfcfcb"/>
+    <circle cx="1120" cy="132" r="104" fill="url(#sheen)"/>
+    <circle cx="1120" cy="132" r="40" fill="none" stroke="#d9d9d5"/>
+    <circle cx="1120" cy="132" r="13" fill="#f2f2f2" stroke="#cfcfcb"/>
+    <text x="1062" y="84" class="marker" font-size="19" fill="#16205c" transform="rotate(-8 1062 84)">my strat v3</text>
+    <path class="grade" d="M1162 128 c 10 -22 38 -20 42 2 c 4 22 -26 34 -40 22 c -10 -9 -6 -24 2 -28" fill="none" stroke="#c23b2a" stroke-width="3.2" stroke-linecap="round"/>
+    <text x="1170" y="146" class="marker gl" font-size="30" fill="#c23b2a">C</text>
+    <text x="1120" y="222" class="sans" font-size="7" letter-spacing="3" fill="#999" text-anchor="middle">AUDITION · CD-R 700MB</text>
+  </g>
+
+  <!-- right: a cassette with turning reels -->
+  <g class="tape">
+    <rect x="806" y="150" width="320" height="200" rx="14" fill="#111"/>
+    <rect x="826" y="166" width="280" height="118" rx="6" fill="#efe9dc"/>
+    <text x="842" y="196" class="marker" font-size="24" fill="#16205c">A</text>
+    <text x="870" y="196" class="marker" font-size="22" fill="#16205c">VERDICT</text>
+    <line x1="842" y1="206" x2="1090" y2="206" stroke="#d8d0bf"/>
+    <rect x="868" y="214" width="196" height="52" rx="26" fill="#1a1a1a"/>
+    <g clip-path="url(#win)">
+      <rect x="868" y="214" width="196" height="52" fill="#3b2a1e" opacity=".55"/>
+    </g>
+    <g class="reel">
+      <circle cx="904" cy="240" r="17" fill="#e9e9e9"/>
+      <path d="M904 226 l4 10 h-8z M890 248 l9 -5 l2 8z M918 248 l-9 -5 l-2 8z" fill="#111"/>
+    </g>
+    <g class="reel">
+      <circle cx="1028" cy="240" r="17" fill="#e9e9e9"/>
+      <path d="M1028 226 l4 10 h-8z M1014 248 l9 -5 l2 8z M1042 248 l-9 -5 l-2 8z" fill="#111"/>
+    </g>
+    <text x="842" y="279" class="sans" font-size="9" letter-spacing="2" fill="#6e6e6e">GRADE C · 01</text>
+    <path d="M866 350 l14 -40 h172 l14 40z" fill="#1d1d1d"/>
+    <circle cx="822" cy="166" r="3" fill="#555"/><circle cx="1110" cy="166" r="3" fill="#555"/>
+    <circle cx="822" cy="336" r="3" fill="#555"/><circle cx="1110" cy="336" r="3" fill="#555"/>
+  </g>
+
+  <!-- floating dock -->
+  <g transform="translate(860 392)">
+    <rect width="250" height="34" fill="#fff"/>
+    <text x="16" y="22" class="serif" font-size="16" fill="#0a0a0a">Audition</text>
+    <line x1="92" y1="0" x2="92" y2="34" stroke="#ececec"/>
+    <text x="108" y="22" class="sans" font-size="11" fill="#0a0a0a">‹  1 · Verdict  ›</text>
+    <line x1="212" y1="0" x2="212" y2="34" stroke="#ececec"/>
+    <text x="224" y="23" class="serif" font-size="17" fill="#b5760f">C</text>
+  </g>
+</svg>

@@ -1,0 +1,7 @@
+numpy>=1.26
+pandas>=2.2
+scipy>=1.11
+matplotlib>=3.8
+yfinance>=0.2.50
+# optional: translator via the Anthropic API (Claude Code works without it)
+anthropic>=0.40

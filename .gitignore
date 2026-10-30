@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# everything you make or connect stays on your machine
+cache/
+reports/
+vault/
+callback/
+config/
+data/
+strategies/
+.claude/
