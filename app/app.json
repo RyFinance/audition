@@ -1,0 +1,9 @@
+{
+  "name": "Audition",
+  "bundleId": "com.rytty.audition.app",
+  "url": "http://127.0.0.1:8767/",
+  "cwd": ".",
+  "start": "./run.sh",
+  "bootSeconds": 120,
+  "icon": "#16205c #f2f2f2 A Didot-Bold"
+}
